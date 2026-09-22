@@ -1,4 +1,4 @@
-"""Booking AI — application Streamlit."""
+""""Booking AI — application Streamlit."""
 
 import re
 from io import BytesIO
@@ -15,9 +15,7 @@ st.set_page_config(page_title="Booking AI", page_icon="🏨", layout="wide")
 
 TARGET_COL = "reservation_annulee"
 DATE_COL = "date_arrivee"
-# Proxy pour le "lieu d'origine de la réservation" : aucune colonne pays/lieu
-# n'existe dans le schéma fourni. Remplacer par la vraie colonne dès qu'elle
-# est disponible (ex. "pays_origine").
+# Proxy pour le "lieu d'origine de la réservation"
 LOCATION_COL = "canal_distribution"
 
 MODEL_PATH = Path(__file__).parent / "model" / "booking_ai_pipeline.joblib"
@@ -167,28 +165,27 @@ with tab2:
                 }
             )
         outlier_df = pd.DataFrame(rows).sort_values("nb_outliers", ascending=False)
-        st.dataframe(outlier_df, use_container_width=True)
+        st.dataframe(outlier_df, width="stretch")
 
         if num_cols:
             selected_col = st.selectbox("Détail par variable numérique", num_cols)
             lower, upper = iqr_bounds(df[selected_col])
             mask = (df[selected_col] < lower) | (df[selected_col] > upper)
             st.plotly_chart(
-                px.box(df, y=selected_col, points="outliers", title=f"Boxplot — {selected_col}"),
-                use_container_width=True,
+                px.box(df, y=selected_col, points="outliers", title=f"Boxplot — {selected_col}")
             )
             st.caption(f"{int(mask.sum())} valeur(s) aberrante(s) détectée(s)")
             st.dataframe(df[mask])
 
         st.subheader("Statistiques descriptives")
-        st.dataframe(df.describe(include="all").transpose(), use_container_width=True)
+        # FIX DE L'ERREUR PYARROW : On convertit en string pour éviter que la colonne 'mean' créée par le transpose ne contienne des Timestamps mixtes
+        st.dataframe(df.describe(include="all").astype(str).transpose(), width="stretch")
 
         if len(num_cols) > 1:
             st.subheader("Matrice de corrélation")
             corr = df[num_cols].corr()
             st.plotly_chart(
-                px.imshow(corr, text_auto=".2f", color_continuous_scale="RdBu_r", title="Correlation map"),
-                use_container_width=True,
+                px.imshow(corr, text_auto=".2f", color_continuous_scale="RdBu_r", title="Correlation map")
             )
 
         st.subheader("Tableaux de bord décisionnels")
@@ -219,15 +216,13 @@ with tab2:
             colA, colB = st.columns(2)
             with colA:
                 st.plotly_chart(
-                    px.pie(dff, names="_statut", title="Réservations annulées vs confirmées (total)"),
-                    use_container_width=True,
+                    px.pie(dff, names="_statut", title="Réservations annulées vs confirmées (total)")
                 )
             if "type_hotel" in dff.columns:
                 with colB:
                     by_hotel = dff.groupby(["type_hotel", "_statut"]).size().reset_index(name="nb")
                     st.plotly_chart(
-                        px.bar(by_hotel, x="type_hotel", y="nb", color="_statut", barmode="group", title="Par hôtel"),
-                        use_container_width=True,
+                        px.bar(by_hotel, x="type_hotel", y="nb", color="_statut", barmode="group", title="Par hôtel")
                     )
 
             if DATE_COL in dff.columns and dff[DATE_COL].notna().any():
@@ -238,15 +233,13 @@ with tab2:
                     .reset_index(name="nb")
                 )
                 st.plotly_chart(
-                    px.line(by_date, x=DATE_COL, y="nb", color="_statut", title="Évolution dans le temps"),
-                    use_container_width=True,
+                    px.line(by_date, x=DATE_COL, y="nb", color="_statut", title="Évolution dans le temps")
                 )
 
             if LOCATION_COL in dff.columns:
                 by_loc = dff.groupby([LOCATION_COL, "_statut"]).size().reset_index(name="nb")
                 st.plotly_chart(
-                    px.bar(by_loc, x=LOCATION_COL, y="nb", color="_statut", barmode="group", title="Par lieu / canal de distribution"),
-                    use_container_width=True,
+                    px.bar(by_loc, x=LOCATION_COL, y="nb", color="_statut", barmode="group", title="Par lieu / canal de distribution")
                 )
         else:
             st.info("La colonne cible n'est pas présente : les graphiques annulée/confirmée ne peuvent pas être affichés pour ce fichier.")
@@ -259,18 +252,8 @@ with tab2:
 
         if "segment_marche" in dff.columns:
             st.plotly_chart(
-                px.pie(dff, names="segment_marche", title="Répartition par segment de marché"),
-                use_container_width=True,
+                px.pie(dff, names="segment_marche", title="Répartition par segment de marché")
             )
-
-# --- Onglet 3 ---------------------------------------------------------------
-with tab3:
-    st.header("Prédiction des annulations")
-    st.caption(
-        "Le modèle doit être entraîné au préalable avec `train_model.py` sur "
-        "un jeu de données historique labellisé. Importez ici un fichier "
-        "SANS la variable cible pour obtenir une prédiction."
-    )
 
 # --- Onglet 3 ---------------------------------------------------------------
 with tab3:
@@ -325,7 +308,7 @@ with tab3:
             c1.metric("Réservations prédites confirmées", n_confirmees)
             c2.metric("Réservations prédites annulées", n_annulees)
 
-            st.dataframe(result, use_container_width=True)
+            st.dataframe(result, width="stretch")
 
             buffer = BytesIO()
             with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
