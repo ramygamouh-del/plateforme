@@ -9,6 +9,10 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from sklearn.metrics import classification_report
+from sklearn.model_selection import train_test_split
+
+from train_model import build_pipeline, NOMINAL_COLS, ORDINAL_COLS
 
 st.set_page_config(page_title="Booking AI", page_icon="🏨", layout="wide")
 
@@ -241,10 +245,45 @@ with tab3:
     )
 
     if not MODEL_PATH.exists():
-        st.warning(
-            "Aucun modèle entraîné trouvé (`model/booking_ai_pipeline.joblib`). "
-            "Exécutez d'abord : `python train_model.py votre_dataset_labellise.csv`"
+        st.warning("Aucun modèle entraîné pour l'instant. Entraîne-le ci-dessous (une seule fois).")
+        st.markdown(
+            "**Étape préalable — entraîner le modèle**\n\n"
+            "Importe un fichier historique qui contient la colonne "
+            f"`{TARGET_COL}` (des réservations passées, dont on connaît déjà "
+            "le statut réel). Le modèle apprendra sur ces données."
         )
+        train_file = st.file_uploader(
+            "Fichier historique labellisé (Excel ou CSV)", type=["csv", "xlsx"], key="train"
+        )
+        if train_file and st.button("🚀 Entraîner le modèle"):
+            try:
+                df_train = load_data(train_file)
+            except ValueError as e:
+                st.error(str(e))
+                st.stop()
+
+            if TARGET_COL not in df_train.columns:
+                st.error(f"La colonne cible `{TARGET_COL}` est absente de ce fichier.")
+                st.stop()
+
+            with st.spinner("Entraînement en cours…"):
+                X = df_train.drop(columns=[c for c in [TARGET_COL, DATE_COL] if c in df_train.columns])
+                y = df_train[TARGET_COL]
+                num_cols = [c for c in X.columns if c not in ORDINAL_COLS + NOMINAL_COLS]
+
+                new_pipeline = build_pipeline(num_cols)
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42, stratify=y
+                )
+                new_pipeline.fit(X_train, y_train)
+                report = classification_report(y_test, new_pipeline.predict(X_test))
+
+                MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+                joblib.dump(new_pipeline, MODEL_PATH)
+
+            st.success("Modèle entraîné et sauvegardé ! Réimporte un fichier ci-dessous pour l'utiliser.")
+            st.text(report)
+            st.rerun()
     else:
         pipeline = joblib.load(MODEL_PATH)
         file3 = st.file_uploader(
