@@ -28,11 +28,14 @@ ALLOWED_EXTENSIONS = {".csv", ".xlsx"}
 
 @st.cache_resource
 def load_trained_pipeline(model_path: Path):
-    """Charge le modèle joblib avec mise en cache Streamlit."""
+    """Charge le modèle joblib avec gestion des erreurs d'incompatibilité."""
     if model_path.exists():
-        return joblib.load(model_path)
+        try:
+            return joblib.load(model_path)
+        except Exception as e:
+            st.warning(f"⚠️ Incompatibilité avec le fichier modèle : {e}")
+            return None
     return None
-
 
 def load_data(uploaded_file) -> pd.DataFrame:
     """Charge un fichier CSV/Excel avec contrôles de base (taille, extension)."""
