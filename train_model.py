@@ -4,10 +4,6 @@ Entraîne le pipeline de prédiction des annulations (Booking AI) et le sauvegar
 Usage :
     python train_model.py chemin/vers/dataset_labellise.csv
     python train_model.py chemin/vers/dataset_labellise.xlsx --output model/booking_ai_pipeline.joblib
-
-Le dataset fourni ici DOIT contenir la colonne cible `reservation_annulee`
-(c'est le jeu de données historique servant à l'apprentissage, différent du
-fichier "à prédire" utilisé ensuite dans l'onglet 3 de l'application).
 """
 
 import argparse
@@ -69,7 +65,7 @@ def load_data(path: str) -> pd.DataFrame:
             except Exception as e:  # noqa: BLE001
                 last_error = e
 
-    # Dernier recours : lecture tolérante, ignore les lignes/guillemets malformés
+    # Dernier recours : lecture tolérante
     for encoding in encodings:
         try:
             df = pd.read_csv(
@@ -94,7 +90,10 @@ def build_pipeline(num_cols: list[str]) -> Pipeline:
             ("num", StandardScaler(), num_cols),
             (
                 "ord",
-                OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1),
+                OrdinalEncoder(
+                    handle_unknown="use_encoded_value",
+                    unknown_value=-1
+                ),
                 ORDINAL_COLS,
             ),
             (
@@ -105,7 +104,16 @@ def build_pipeline(num_cols: list[str]) -> Pipeline:
         ],
         remainder="drop",
     )
-    model = RandomForestClassifier(random_state=42, n_estimators=300, n_jobs=-1)
+
+    # Réglage des hyperparamètres pour éviter l'overfitting
+    model = RandomForestClassifier(
+        n_estimators=300,
+        max_depth=15,           # Limite la profondeur pour éviter d'apprendre le bruit
+        min_samples_leaf=3,     # Assure qu'une feuille contient au moins 3 observations
+        random_state=42,
+        n_jobs=-1
+    )
+    
     return Pipeline(steps=[("preprocessing", preprocessor), ("model", model)])
 
 
