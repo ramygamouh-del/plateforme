@@ -48,6 +48,7 @@ NOMINAL_COLS = [
     "type_hotel",
     "client_nouveau",
     "places_parking_demandees",
+    "ville",
 ]
 
 
