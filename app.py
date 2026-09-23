@@ -1,10 +1,9 @@
-""""Booking AI — application Streamlit."""
+"""Booking AI — application Streamlit."""
 
-import re
+import csv
 from io import BytesIO
 from pathlib import Path
 
-import csv
 import joblib
 import numpy as np
 import pandas as pd
@@ -26,6 +25,14 @@ ALLOWED_EXTENSIONS = {".csv", ".xlsx"}
 # ---------------------------------------------------------------------------
 # Fonctions utilitaires
 # ---------------------------------------------------------------------------
+
+@st.cache_resource
+def load_trained_pipeline(model_path: Path):
+    """Charge le modèle joblib avec mise en cache Streamlit."""
+    if model_path.exists():
+        return joblib.load(model_path)
+    return None
+
 
 def load_data(uploaded_file) -> pd.DataFrame:
     """Charge un fichier CSV/Excel avec contrôles de base (taille, extension)."""
@@ -178,7 +185,6 @@ with tab2:
             st.dataframe(df[mask])
 
         st.subheader("Statistiques descriptives")
-        # FIX DE L'ERREUR PYARROW : On convertit en string pour éviter que la colonne 'mean' créée par le transpose ne contienne des Timestamps mixtes
         st.dataframe(df.describe(include="all").astype(str).transpose(), width="stretch")
 
         if len(num_cols) > 1:
@@ -263,13 +269,14 @@ with tab3:
         "prédiction (le modèle a déjà été entraîné en amont)."
     )
 
-    if not MODEL_PATH.exists():
+    pipeline = load_trained_pipeline(MODEL_PATH)
+
+    if pipeline is None:
         st.error(
             "Fichier modèle introuvable (`model/booking_ai_pipeline.joblib`). "
-            "Ajoutez-le au dépôt pour activer cet onglet."
+            "Exécutez `train_model.py` ou vérifiez la présence du fichier dans le dépôt."
         )
     else:
-        pipeline = joblib.load(MODEL_PATH)
         file3 = st.file_uploader(
             "Importer le fichier à prédire (Excel ou CSV)", type=["csv", "xlsx"], key="predict"
         )
@@ -299,7 +306,9 @@ with tab3:
                     "statut_predit": np.where(preds == 1, "Annulée", "Confirmée"),
                 }
             )
-            result = result.applymap(sanitize_for_excel)
+            
+            # Correction de la dépréciation de pandas : map à la place de applymap
+            result = result.map(sanitize_for_excel) if hasattr(result, 'map') else result.applymap(sanitize_for_excel)
 
             n_confirmees = int((preds == 0).sum())
             n_annulees = int((preds == 1).sum())
