@@ -1,9 +1,6 @@
 """
-Entraîne le pipeline de prédiction des annulations (Booking AI) et le sauvegarde.
-
-Usage :
-    python train_model.py chemin/vers/dataset_labellise.csv
-    python train_model.py chemin/vers/dataset_labellise.xlsx --output model/booking_ai_pipeline.joblib
+Entraîne le pipeline de prédiction des annulations (Booking AI) avec gestion d'imputation
+et équilibrage de classes pour éliminer l'overfitting.
 """
 
 import argparse
@@ -14,6 +11,7 @@ import joblib
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.impute import SimpleImputer
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
@@ -62,10 +60,9 @@ def load_data(path: str) -> pd.DataFrame:
                 df = pd.read_csv(path, encoding=encoding, sep=sep)
                 if df.shape[1] > 1:
                     return df
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 last_error = e
 
-    # Dernier recours : lecture tolérante
     for encoding in encodings:
         try:
             df = pd.read_csv(
@@ -78,42 +75,63 @@ def load_data(path: str) -> pd.DataFrame:
             )
             if df.shape[1] > 1:
                 return df
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             last_error = e
 
-    raise ValueError(f"Impossible de lire ce CSV (encodage/séparateur non reconnu) : {last_error}")
+    raise ValueError(f"Impossible de lire ce CSV : {last_error}")
 
 
 def build_pipeline(num_cols: list[str]) -> Pipeline:
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ("num", StandardScaler(), num_cols),
+    # Transformation des variables numériques
+    num_transformer = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+        ]
+    )
+
+    # Transformation des variables ordinales
+    ord_transformer = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="most_frequent")),
             (
-                "ord",
+                "encoder",
                 OrdinalEncoder(
                     handle_unknown="use_encoded_value",
-                    unknown_value=-1
+                    unknown_value=-1,
                 ),
-                ORDINAL_COLS,
             ),
-            (
-                "nom",
-                OneHotEncoder(handle_unknown="ignore", sparse_output=False),
-                NOMINAL_COLS,
-            ),
+        ]
+    )
+
+    # Transformation des variables nominales
+    nom_transformer = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="constant", fill_value="Inconnu")),
+            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+        ]
+    )
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", num_transformer, num_cols),
+            ("ord", ord_transformer, ORDINAL_COLS),
+            ("nom", nom_transformer, NOMINAL_COLS),
         ],
         remainder="drop",
     )
 
-    # Réglage des hyperparamètres pour éviter l'overfitting
+    # Modèle avec régularisation et équilibrage des classes pour prévenir le biais
     model = RandomForestClassifier(
-        n_estimators=300,
-        max_depth=15,           # Limite la profondeur pour éviter d'apprendre le bruit
-        min_samples_leaf=3,     # Assure qu'une feuille contient au moins 3 observations
+        n_estimators=200,
+        max_depth=12,
+        min_samples_split=5,
+        min_samples_leaf=4,
+        class_weight="balanced",  # Résout le problème des prédictions unilatérales
         random_state=42,
-        n_jobs=-1
+        n_jobs=-1,
     )
-    
+
     return Pipeline(steps=[("preprocessing", preprocessor), ("model", model)])
 
 
@@ -121,10 +139,7 @@ def main(data_path: str, output_path: str) -> None:
     df = load_data(data_path)
 
     if TARGET_COL not in df.columns:
-        raise ValueError(
-            f"La colonne cible '{TARGET_COL}' est absente du fichier fourni. "
-            "Ce script attend un jeu de données HISTORIQUE labellisé pour l'entraînement."
-        )
+        raise ValueError(f"La colonne cible '{TARGET_COL}' est absente du fichier fourni.")
 
     drop_cols = [c for c in [TARGET_COL, DATE_COL] if c in df.columns]
     X = df.drop(columns=drop_cols)
@@ -139,13 +154,13 @@ def main(data_path: str, output_path: str) -> None:
     )
     pipeline.fit(X_train, y_train)
 
-    print("=== Évaluation sur le jeu de test ===")
+    print("=== Évaluation de la Généralisation ===")
     print(classification_report(y_test, pipeline.predict(X_test)))
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, output, compress=3)
-    print(f"\nPipeline sauvegardé dans : {output.resolve()}")
+    print(f"\nPipeline ré-entraîné et sauvegardé avec succès dans : {output.resolve()}")
 
 
 if __name__ == "__main__":
