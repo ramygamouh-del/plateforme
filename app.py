@@ -227,7 +227,7 @@ if menu_option == "📌 Overview & Presentation":
             3. **AI Cancellation Prediction**: Forecasting booking cancellations using Machine Learning to optimize Yield Management.
             """
         )
-with col2:
+    with col2:
         st.info(
             """
             💡 **Quick Guide:**
