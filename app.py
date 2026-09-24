@@ -512,15 +512,39 @@ elif menu_option == "🤖 Prédiction des annulations":
             X = df_pred.drop(columns=[c for c in [TARGET_COL, DATE_COL] if c in df_pred.columns])
 
             try:
-                preds = pipeline.predict(X)
-                probs = pipeline.predict_proba(X)[:, 1] if hasattr(pipeline, "predict_proba") else None
+                # Récupération des probabilités si le modèle les fournit
+                if hasattr(pipeline, "predict_proba"):
+                    probs = pipeline.predict_proba(X)[:, 1]
+                else:
+                    probs = None
+                    preds_default = pipeline.predict(X)
             except Exception as e:
                 st.error(
-                    "Erreur lors de la prédiction — vérifiez la compatibilité du fichier fourni.\n\n"
+                    "Erreur lors de la prédiction — vérifiez la compatibilité des colonnes du fichier.\n\n"
                     f"Détail technique : {e}"
                 )
                 st.stop()
 
+            # Réglage dynamique du seuil de décision
+            st.markdown("---")
+            st.subheader("⚙️ Paramétrage du seuil de détection du risque")
+            
+            threshold = st.slider(
+                "Seuil de probabilité pour classer une réservation comme 'Annulée'",
+                min_value=0.10,
+                max_value=0.90,
+                value=0.50,
+                step=0.05,
+                help="Si la probabilité d'annulation dépasse ce seuil, la réservation sera prédite comme 'Annulée'."
+            )
+
+            # Application du seuil selon la probabilité
+            if probs is not None:
+                preds = np.where(probs >= threshold, 1, 0)
+            else:
+                preds = preds_default
+
+            # Structure du DataFrame de résultat
             result = pd.DataFrame(
                 {
                     DATE_COL: dates.values,
@@ -544,22 +568,31 @@ elif menu_option == "🤖 Prédiction des annulations":
             m2.metric("Prédites Confirmées 🟢", n_confirmees)
             m3.metric("Prédites Annulées 🔴", n_annulees)
 
+            # Construction sécurisée du DataFrame pour le camembert
+            pred_summary = pd.DataFrame(
+                {
+                    "Statut": ["Confirmée", "Annulée"],
+                    "Nombre": [n_confirmees, n_annulees]
+                }
+            )
+
             # Graphiques des prédictions dans des conteneurs bordurés
             cp1, cp2 = st.columns(2)
             with cp1:
                 with st.container(border=True):
-                    pred_summary = pd.DataFrame(
-                        {"Statut": ["Confirmée", "Annulée"], "Nombre": [n_confirmees, n_annulees]}
-                    )
-                    fig_pred_pie = px.pie(
-                        pred_summary,
-                        names="Statut",
-                        values="Nombre",
-                        title="Répartition Prédictive des Annulations",
-                        color="Statut",
-                        color_discrete_map={"Confirmée": "#10B981", "Annulée": "#EF4444"},
-                    )
-                    st.plotly_chart(fig_pred_pie, use_container_width=True)
+                    if total_preds > 0:
+                        fig_pred_pie = px.pie(
+                            pred_summary,
+                            names="Statut",
+                            values="Nombre",
+                            title="Répartition Prédictive des Annulations",
+                            color="Statut",
+                            color_discrete_map={"Confirmée": "#10B981", "Annulée": "#EF4444"},
+                            hole=0.3
+                        )
+                        st.plotly_chart(fig_pred_pie, use_container_width=True)
+                    else:
+                        st.info("Aucune donnée à afficher.")
 
             with cp2:
                 with st.container(border=True):
@@ -571,7 +604,16 @@ elif menu_option == "🤖 Prédiction des annulations":
                             title="Distribution des Probabilités d'Annulation (%)",
                             color_discrete_sequence=["#3B82F6"],
                         )
+                        # Ligne verticale indiquant le seuil actuel
+                        fig_hist.add_vline(
+                            x=threshold * 100, 
+                            line_dash="dash", 
+                            line_color="red", 
+                            annotation_text=f"Seuil ({int(threshold*100)}%)"
+                        )
                         st.plotly_chart(fig_hist, use_container_width=True)
+                    else:
+                        st.info("Les probabilités ne sont pas disponibles pour ce modèle.")
 
             st.subheader("Tableau des résultats prédits")
             st.dataframe(result, use_container_width=True)
@@ -591,10 +633,14 @@ elif menu_option == "🤖 Prédiction des annulations":
                 )
 
             with col_d2:
+                pct_conf = (n_confirmees / total_preds * 100) if total_preds > 0 else 0
+                pct_ann = (n_annulees / total_preds * 100) if total_preds > 0 else 0
+
                 summary_pred_pdf = [
                     {"label": "Volume total analysé", "value": str(total_preds)},
-                    {"label": "Réservations Confirmées", "value": f"{n_confirmees} ({(n_confirmees/total_preds*100):.1f}%)"},
-                    {"label": "Réservations Annulées (Risque)", "value": f"{n_annulees} ({(n_annulees/total_preds*100):.1f}%)"},
+                    {"label": "Seuil de décision appliqué", "value": f"{int(threshold * 100)}%"},
+                    {"label": "Réservations Confirmées", "value": f"{n_confirmees} ({pct_conf:.1f}%)"},
+                    {"label": "Réservations Annulées (Risque)", "value": f"{n_annulees} ({pct_ann:.1f}%)"},
                 ]
                 table_pred_pdf = [["Indicateur", "Valeur"]] + [[s["label"], s["value"]] for s in summary_pred_pdf]
 
