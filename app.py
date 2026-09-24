@@ -227,7 +227,14 @@ if menu_option == "📌 Overview & Presentation":
             3. **AI Cancellation Prediction**: Forecasting booking cancellations using Machine Learning to optimize Yield Management.
             """
         )
-
+with col2:
+        st.info(
+            """
+            💡 **Quick Guide:**
+            - Go to **Data Exploration & Dashboards** to upload and inspect your booking datasets.
+            - Use the **Cancellation Prediction** tab to predict risks on upcoming customer reservations.
+            """
+        )
 # ===========================================================================
 # Section 2: Data Exploration and Dashboards
 # ===========================================================================
